@@ -57,10 +57,6 @@ jobs:
                         exit 1
                       fi
 
-                      # Lancer la commande make prod
-                      echo "🏗️ Lancement de make prod..."
-                      make prod
-
                       # Vérifier si la commande s'est bien exécutée
                       if [ $? -eq 0 ]; then
                         echo "✅ Déploiement terminé avec succès!"
