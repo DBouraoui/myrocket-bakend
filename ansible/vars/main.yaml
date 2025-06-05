@@ -1,0 +1,7 @@
+app_name: #application name
+app_path: # exemple /var/www/{{ app_name }}
+git_repo: #https repo
+git_branch: #branch pull
+php_version: #php-v
+domain_name: #your-domaine.fr
+app_port: #port for reverse proxy

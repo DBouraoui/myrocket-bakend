@@ -1,0 +1,57 @@
+services:
+  app:
+    build: .
+    ports:
+      - "9000:9000"
+    volumes:
+      - .:/var/www/symfony
+    depends_on:
+      - mysql
+
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - .:/var/www/symfony
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+  mysql:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_USER: ${MYSQL_USER:-user}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-app}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password --skip-host-cache --skip-name-resolve
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - "8080:8080"
+
+#  messenger:
+#    build: .
+#    volumes:
+#      - ./:/var/www/symfony
+#    depends_on:
+#      - mysql
+#      - app
+#    command: php /var/www/symfony/bin/console messenger:consume async --time-limit=3600
+#    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+  mysql_data:

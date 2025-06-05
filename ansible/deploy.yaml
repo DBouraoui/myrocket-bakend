@@ -1,0 +1,313 @@
+---
+- name: Déployer application Symfony avec Docker Compose, Caddy et sécurité
+  hosts: production
+  become: yes
+  vars_files:
+      - vars/main.yaml
+
+  tasks:
+      # ============================================================================
+      # SÉCURITÉ ET FIREWALL
+      # ============================================================================
+
+      - name: Installer les outils de sécurité
+        apt:
+            name:
+                - ufw
+                - fail2ban
+                - unattended-upgrades
+            state: present
+            update_cache: yes
+
+      - name: Configurer UFW - Réinitialiser les règles
+        ufw:
+            state: reset
+
+      - name: Configurer UFW - Politique par défaut (deny incoming, allow outgoing)
+        ufw:
+            policy: "{{ item.policy }}"
+            direction: "{{ item.direction }}"
+        loop:
+            - { policy: 'deny', direction: 'incoming' }
+            - { policy: 'allow', direction: 'outgoing' }
+
+      - name: Configurer UFW - Autoriser SSH (priorité haute pour éviter le lockout)
+        ufw:
+            rule: allow
+            port: '22'
+            proto: tcp
+            comment: 'SSH access'
+
+      - name: Configurer UFW - Autoriser HTTP/HTTPS
+        ufw:
+            rule: allow
+            port: "{{ item.port }}"
+            proto: "{{ item.proto }}"
+            comment: "{{ item.comment }}"
+        loop:
+            - { port: '80', proto: 'tcp', comment: 'HTTP' }
+            - { port: '443', proto: 'tcp', comment: 'HTTPS TCP' }
+            - { port: '443', proto: 'udp', comment: 'HTTPS UDP (HTTP/3)' }
+
+      - name: Configurer UFW - Autoriser port application
+        ufw:
+            rule: allow
+            port: "{{ app_port }}"
+            proto: tcp
+            comment: 'Application Symfony'
+
+      - name: Activer UFW
+        ufw:
+            state: enabled
+
+      - name: Configurer fail2ban pour SSH
+        copy:
+            dest: /etc/fail2ban/jail.d/sshd.conf
+            content: |
+                [sshd]
+                enabled = true
+                port = ssh
+                filter = sshd
+                logpath = /var/log/auth.log
+                maxretry = 3
+                bantime = 3600
+                findtime = 600
+            owner: root
+            group: root
+            mode: '0644'
+        notify: restart fail2ban
+
+      - name: Configurer fail2ban pour Caddy
+        copy:
+            dest: /etc/fail2ban/jail.d/caddy.conf
+            content: |
+                [caddy]
+                enabled = true
+                port = http,https
+                filter = caddy
+                logpath = /var/log/caddy/*.log
+                maxretry = 5
+                bantime = 1800
+                findtime = 300
+            owner: root
+            group: root
+            mode: '0644'
+        notify: restart fail2ban
+
+      - name: Créer le filtre fail2ban pour Caddy
+        copy:
+            dest: /etc/fail2ban/filter.d/caddy.conf
+            content: |
+                [Definition]
+                failregex = ^.*\[ERROR\].*client <HOST>.*$
+                            ^.*\[WARN\].*client <HOST>.*$
+                ignoreregex =
+            owner: root
+            group: root
+            mode: '0644'
+        notify: restart fail2ban
+
+      - name: Démarrer et activer fail2ban
+        systemd:
+            name: fail2ban
+            state: started
+            enabled: yes
+
+      # ============================================================================
+      # DÉPENDANCES SYSTÈME
+      # ============================================================================
+
+      - name: Installer les dépendances système
+        apt:
+            name:
+                - apt-transport-https
+                - ca-certificates
+                - curl
+                - gnupg
+                - lsb-release
+                - git
+                - htop
+                - nano
+                - wget
+            state: present
+            update_cache: yes
+
+      - name: Installer PHP et extensions
+        apt:
+            name:
+                - "php{{ php_version }}"
+                - "php{{ php_version }}-fpm"
+                - "php{{ php_version }}-mysql"
+                - "php{{ php_version }}-xml"
+                - "php{{ php_version }}-dom"
+                - "php{{ php_version }}-simplexml"
+                - "php{{ php_version }}-mbstring"
+                - "php{{ php_version }}-curl"
+                - "php{{ php_version }}-zip"
+                - "php{{ php_version }}-intl"
+                - "php{{ php_version }}-gd"
+                - git
+                - unzip
+            state: present
+            update_cache: yes
+
+      # ============================================================================
+      # DOCKER
+      # ============================================================================
+
+      - name: Ajouter la clé GPG Docker
+        apt_key:
+            url: https://download.docker.com/linux/ubuntu/gpg
+            state: present
+
+      - name: Ajouter le dépôt Docker
+        apt_repository:
+            repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+            state: present
+
+      - name: Installer Docker
+        apt:
+            name:
+                - docker-ce
+                - docker-ce-cli
+                - containerd.io
+                - docker-buildx-plugin
+                - docker-compose-plugin
+            state: present
+            update_cache: yes
+
+      - name: Ajouter l'utilisateur au groupe docker
+        user:
+            name: "{{ ansible_user }}"
+            groups: docker
+            append: yes
+
+      - name: Démarrer et activer Docker
+        systemd:
+            name: docker
+            state: started
+            enabled: yes
+
+      # ============================================================================
+      # CADDY
+      # ============================================================================
+
+      - name: Ajouter la clé GPG Caddy
+        apt_key:
+            url: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+            state: present
+
+      - name: Ajouter le dépôt Caddy
+        apt_repository:
+            repo: "deb https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main"
+            state: present
+
+      - name: Installer Caddy
+        apt:
+            name: caddy
+            state: present
+            update_cache: yes
+
+      - name: Créer le répertoire de logs Caddy
+        file:
+            path: /var/log/caddy
+            state: directory
+            owner: caddy
+            group: caddy
+            mode: '0755'
+
+      - name: Configurer Caddy
+        template:
+            src: Caddyfile.j2
+            dest: /etc/caddy/Caddyfile
+            owner: caddy
+            group: caddy
+            mode: '0644'
+        notify: restart caddy
+
+      - name: Démarrer et activer Caddy
+        systemd:
+            name: caddy
+            state: started
+            enabled: yes
+
+      # ============================================================================
+      # CONFIGURATION SYSTÈME
+      # ============================================================================
+
+      - name: Configurer les mises à jour automatiques
+        copy:
+            dest: /etc/apt/apt.conf.d/20auto-upgrades
+            content: |
+                APT::Periodic::Update-Package-Lists "1";
+                APT::Periodic::Unattended-Upgrade "1";
+            owner: root
+            group: root
+            mode: '0644'
+
+      - name: Configurer le swap si nécessaire (recommandé pour les petits VPS)
+        shell: |
+            if [ ! -f /swapfile ]; then
+              fallocate -l 1G /swapfile
+              chmod 600 /swapfile
+              mkswap /swapfile
+              swapon /swapfile
+              echo '/swapfile none swap sw 0 0' >> /etc/fstab
+            fi
+        args:
+            creates: /swapfile
+
+      # ============================================================================
+      # VÉRIFICATIONS FINALES
+      # ============================================================================
+
+      - name: Vérifier que tous les services sont actifs
+        systemd:
+            name: "{{ item }}"
+            state: started
+        loop:
+            - docker
+            - caddy
+            - fail2ban
+            - ufw
+
+      - name: Afficher le statut UFW
+        shell: ufw status verbose
+        register: ufw_status
+
+      - name: Afficher les règles UFW
+        debug:
+            var: ufw_status.stdout_lines
+
+      - name: Vérifier l'accès à l'application
+        uri:
+            url: "http://localhost:{{ app_port }}"
+            method: GET
+            status_code: [200, 301, 302, 404]
+        delegate_to: "{{ inventory_hostname }}"
+        ignore_errors: yes
+        register: app_check
+
+      - name: Résultat du test d'accès
+        debug:
+            msg: |
+                Application accessible: {{ 'OUI' if app_check.status in [200, 301, 302] else 'NON' }}
+                Code de statut: {{ app_check.status | default('Erreur') }}
+
+    # ============================================================================
+    # HANDLERS
+    # ============================================================================
+
+  handlers:
+      - name: restart caddy
+        systemd:
+            name: caddy
+            state: restarted
+
+      - name: restart fail2ban
+        systemd:
+            name: fail2ban
+            state: restarted
+
+      - name: reload ufw
+        shell: ufw --force reload

@@ -1,0 +1,41 @@
+:8000 {
+    # Document root vers le dossier public de Symfony
+    root * /var/www/symfony/public
+
+    # Logs détaillés pour le debug
+    log {
+        level DEBUG
+    }
+
+    # Servir les fichiers statiques directement
+    file_server
+
+    # Proxy vers PHP-FPM pour les fichiers .php
+    @php {
+        path *.php
+    }
+    reverse_proxy @php app:9000 {
+        transport fastcgi {
+            split .php
+        }
+    }
+
+    # Front controller pour Symfony - toutes les routes vers index.php
+    @notFile {
+        not file
+        not path /favicon.ico
+        not path /robots.txt
+        not path /_profiler/*
+        not path /_wdt/*
+    }
+    rewrite @notFile /index.php
+
+    # Sécurité basique (moins restrictive en dev)
+    @blocked {
+        path /.env*
+        path /.git*
+        path /docker*
+        path /Dockerfile*
+    }
+    respond @blocked 403
+}
