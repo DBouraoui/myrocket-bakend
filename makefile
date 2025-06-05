@@ -25,9 +25,6 @@ prod-first-time:
 	sudo cp .env .env.local
 	sudo bin/console cache:clear
 
-deploy-ansible:
-	ansible-playbook -i ansible/inventory.yaml ansible/deploy.yaml
-
 logs:
 	sudo docker compose -f compose.prod.yaml logs -f
 
