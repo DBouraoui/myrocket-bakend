@@ -9,6 +9,7 @@ use App\Entity\User;
 use App\Interface\FactoryInterface;
 use App\Trait\FactoryMapperTrait;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
+use Symfony\Component\Uid\Uuid;
 
 class UserFactory implements FactoryInterface {
     use FactoryMapperTrait;
@@ -33,5 +34,19 @@ class UserFactory implements FactoryInterface {
 
         return $user;
 
+    }
+
+    public function forgetPasswordeEmailSending(User $user) {
+        $user->setToken(Uuid::v4()->toRfc4122());
+        $user->setTokenExpirationAt(new \DateTimeImmutable("+1 day"));
+
+        return $user;
+    }
+
+    public function activateAccount(User $user): User {
+        $user->setToken(null);
+        $user->setTokenExpirationAt(null);
+
+        return $user;
     }
 }
