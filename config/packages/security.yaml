@@ -1,25 +1,36 @@
 security:
     password_hashers:
         Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface: 'auto'
+
     providers:
-        users_in_memory: { memory: null }
+        # Used to reload user from session and other features (e.g. switch_user)
+        app_user_provider:
+            entity:
+                class: App\Entity\User
+                property: email
+
     firewalls:
+        # Login firewall using LexikJWT
         login:
             pattern: ^/api/login
             stateless: true
             json_login:
-                username_path: email
                 check_path: /api/login_check
+                username_path: email
                 success_handler: lexik_jwt_authentication.handler.authentication_success
                 failure_handler: lexik_jwt_authentication.handler.authentication_failure
 
+        # JWT-protected API
         api:
             pattern: ^/api
             stateless: true
+            provider: app_user_provider
             jwt: ~
+            user_checker: App\Security\UserChecker
 
     access_control:
         - { path: ^/api/login, roles: PUBLIC_ACCESS }
+        - { path: ^/api/user,  roles: PUBLIC_ACCESS }
         - { path: ^/api,       roles: IS_AUTHENTICATED_FULLY }
 
 when@test:
