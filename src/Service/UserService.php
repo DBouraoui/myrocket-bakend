@@ -6,6 +6,7 @@ namespace App\Service;
 
 use App\Dto\UserCreateDto;
 use App\Dto\UserForgetPasswordEmailSendingDto;
+use App\Dto\UserForgetPasswordResetDto;
 use App\Dto\UserUpdateDto;
 use App\Dto\UserValidateAccountDto;
 use App\Entity\User;
@@ -89,7 +90,7 @@ readonly class UserService {
         return $user;
     }
 
-    public function forgetPasswordeEmailSending(UserForgetPasswordEmailSendingDto $userDto): void {
+    public function forgetPasswordEmailSending(UserForgetPasswordEmailSendingDto $userDto): void {
         $this->validateDTO($userDto);
 
        $user = $this->userRepository->findOneBy(['email' => $userDto->email]);
@@ -107,6 +108,27 @@ readonly class UserService {
         //TODO -> sending email here with new token and expiration date
 
        $this->entityManager->flush();
+    }
+
+    public function resetPasswordForget(UserForgetPasswordResetDto $userDto): User {
+        $this->validateDTO($userDto);
+
+        $user = $this->userRepository->findOneBy(['uuid' => $userDto->uuid]);
+
+        if (empty($user)) {
+            throw new \Exception("User identifiant invalide");
+        }
+
+        if ($user->getToken() !== $userDto->token) {
+            throw new \Exception("Token is not valide");
+        }
+
+        $user->setPassword($this->passwordHasher->hashPassword($user, $userDto->password));
+        $this->userFactory->activateAccount($user);
+
+        $this->entityManager->flush();
+
+        return $user;
     }
 
     private function checkEmailUser(string $email): void {
