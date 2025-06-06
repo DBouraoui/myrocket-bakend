@@ -13,11 +13,11 @@ use Symfony\Component\Uid\Uuid;
 class UserCreateDto implements DtoInterface {
     use DtoMapperTrait;
 
-    public ?string $id = null;
+    public ?string $id;
     #[Length(max: 128)]
     #[Email]
     public string $email;
-    public ?string $uuid = null;
+    public ?string $uuid;
     #[Length(min: 6, max: 128)]
     public string $password;
     public array $roles = ["ROLE_USER"];
@@ -27,7 +27,7 @@ class UserCreateDto implements DtoInterface {
     public \DateTimeImmutable $tokenExpirationAt;
 
     public function __construct() {
-        $this->token = bin2hex(random_bytes(10));
+        $this->token = Uuid::v4()->toRfc4122();
         $this->tokenExpirationAt = new \DateTimeImmutable("+1 day");
         $this->uuid = Uuid::v4()->toRfc4122();
     }
